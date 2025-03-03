@@ -1,0 +1,89 @@
+#╔════════════════════════════╗
+#   GITHUB SPECIFIC WORKFLOW
+#╚════════════════════════════╝
+
+name: '🚀 DSI-[PIPELINE_COMPONENT_NAME]'
+
+on:
+  push:
+    paths:
+      - '[PIPELINE_COMPONENT_PATH]/**' # e.g. mappers/**, pipelines/**, etc.
+      - '[PIPELINE_COMPONENT_PATH]/**/**'
+      - '.github/workflows/[PIPELINE_COMPONENT_PATH].yaml'
+
+jobs:
+
+  [PIPELINE_COMPONENT_NAME]-docker-build:
+    name: [PIPELINE_COMPONENT_NAME] Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout Working Directory
+        uses: actions/checkout@v4
+      -
+        name: Login with Azure CLI
+        id: azure-login
+        uses: azure/login@v1
+        with:
+          creds: '{"clientId":"${{ secrets.ARM_CLIENT_ID }}","clientSecret":"${{ secrets.ARM_CLIENT_SECRET }}","subscriptionId":"${{ secrets.ARM_SUBSCRIPTION_ID }}","tenantId":"${{ secrets.ARM_TENANT_ID }}"}'
+      -
+        name: ⚙️ Install Helm
+        uses: azure/setup-helm@v4
+      -
+        name: Build and Push with Azure CLI
+        id: build-and-push
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az acr login --name [CONTAINER_REGISTRY] --resource-group [RESOURCE_GROUP] --expose-token
+
+            # Loop through each Dockerfile in the [PIPELINE_COMPONENT_PATH] folder
+            for dockerfile in $(ls ./[PIPELINE_COMPONENT_PATH]/*/Dockerfile | sort); do
+              IMAGE_NAME=$(basename $(dirname $dockerfile))
+              # Store this variable as an environment variable
+              echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+              # Build the image
+              az acr build --image dsi/[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}:v${{ github.run_number }} --registry [CONTAINER_REGISTRY] -f $dockerfile ./[PIPELINE_COMPONENT_PATH}/${IMAGE_NAME}
+            done
+      -
+        name: Package and Push Helm Chart
+        run: |
+          for dockerfile in $(ls ./[PIPELINE_COMPONENT_PATH]/*/Dockerfile | sort); do
+            IMAGE_NAME=$(basename $(dirname $dockerfile))
+            REPO_NAME="helm/[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}"
+            REGISTRY_NAME="[CONTAINER_REGISTRY]"
+            
+            if az acr repository show --name $REGISTRY_NAME --repository $REPO_NAME &>/dev/null; then
+              LATEST_VERSION=$(az acr repository show-tags --name $REGISTRY_NAME --repository $REPO_NAME --orderby time_desc --top 1 --output tsv)
+              CHART_VERSION=$(echo $LATEST_VERSION | awk -F. -v OFS=. '{$NF += 1 ; print}')
+            else
+              CHART_VERSION="0.0.1"
+            fi
+            
+            echo "📦 Packaging Helm Chart: [$CHART_VERSION]"
+            
+            # Check for the correct Helm chart directory
+            if [ -d "[PIPELINE_COMPONENT_PATH]/${IMAGE_NAME}/charts" ]; then
+              CHART_PATH="[PIPELINE_COMPONENT_PATH]/${IMAGE_NAME}/charts"
+            else
+              echo "❌ ERROR: No valid Helm chart directory found. Skipping Helm package."
+              continue
+            fi
+
+            # Ensure the correct name is set in Chart.yaml before packaging
+            sed -i "s/^name: .*/name: [PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}/" $CHART_PATH/Chart.yaml
+
+            # Package the Helm chart with the correct name
+            helm package --version $CHART_VERSION --destination . $CHART_PATH
+            echo "✅ Successfully packaged Helm chart."
+
+            # Push the Helm chart
+            CHART_TGZ="[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}-${CHART_VERSION}.tgz"
+            echo "🚀 Pushing Helm Chart: [$CHART_TGZ]"
+            helm registry login $REGISTRY_NAME.azurecr.io \
+              --username ${{ secrets.ARM_CLIENT_ID }} \
+              --password ${{ secrets.ARM_CLIENT_SECRET }}
+            
+            helm push "$CHART_TGZ" oci://$REGISTRY_NAME.azurecr.io/helm
+          done
