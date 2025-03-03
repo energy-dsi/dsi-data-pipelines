@@ -1,0 +1,16 @@
+# Notice
+**Repository:** dsi-data-pipelines
+**Description:** Attribution and legal notices related to the use of this repository, including acknowledgments of external contributions.
+**SPDX-License-Identifier:** 'Apache-2.0'
+
+This product includes code originally developed as [telicent-lib] by [Telicent Ltd].
+This product is now maintained and further developed as [dsi-data-pipelines] by the National Energy Systems Operator Limited.
+
+© 2018-2024 Telicent Ltd.
+© Copyright 2025 Data Sharing Infrastructure, National Energy Systems Operator Limited
+
+Licensed under the Apache License, Version 2.0.
+
+This project incorporates contributions from various organizations and individuals.
+
+For full licensing terms, see [LICENSE](./LICENSE).

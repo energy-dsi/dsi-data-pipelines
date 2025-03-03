@@ -1,0 +1,91 @@
+#╔════════════════════════════╗
+#    ADO SPECIFIC WORKFLOW
+#╚════════════════════════════╝
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - '[PIPELINE_COMPONENT_PATH]/**'
+      - '.azure-pipelines/[PIPELINE_COMPONENT_PATH].yml'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  ACR_NAME: '[CONTAINER_REGISTRY]'
+  RESOURCE_GROUP: '[RESOURCE_GROUP]'
+  HELM_REPO: 'helm'
+
+stages:
+  - stage: BuildAndPush
+    displayName: Build and Push Docker Images
+    jobs:
+      - job: DockerBuildPush
+        displayName: Build and Push Docker Images to ACR
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: Login with Azure CLI & Build and Push Docker Images
+            inputs:
+              connectedServiceNameARM: '[AZURE_SERVICE_CONNECTION_NAME]'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr login --name $(ACR_NAME) --resource-group $(RESOURCE_GROUP) 
+                for dockerfile in $(ls ./[PIPELINE_COMPONENT_PATH]/*/Dockerfile | sort); do
+                  IMAGE_NAME=$(basename $(dirname $dockerfile))
+                  IMAGE_TAG=dsi/[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}:v$(Build.BuildId)
+                  echo "Building and pushing $IMAGE_TAG"
+                  az acr build --image $IMAGE_TAG --registry $(ACR_NAME) -f $dockerfile ./[PIPELINE_COMPONENT_PATH}/${IMAGE_NAME}
+                done
+
+  - stage: PackageAndPushHelm
+    displayName: Package and Push Helm Charts
+    jobs:
+      - job: HelmPackagePush
+        displayName: Package and Push Helm Charts
+        steps:
+          - checkout: self
+
+          - task: HelmInstaller@0
+            displayName: Install Helm
+            inputs:
+              helmVersion: 'v3'
+
+          - task: AzureCLI@2
+            displayName: Package and Push Helm Charts
+            inputs:
+              connectedServiceNameARM: '[AZURE_SERVICE_CONNECTION_NAME]'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr login --name $(ACR_NAME) --resource-group $(RESOURCE_GROUP) 
+                for dockerfile in $(ls ./[PIPELINE_COMPONENT_PATH]/*/Dockerfile | sort); do
+                  IMAGE_NAME=$(basename $(dirname $dockerfile))
+                  REPO_NAME="$(HELM_REPO)/[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}"
+
+                  if az acr repository show --name $(ACR_NAME) --repository $REPO_NAME &>/dev/null; then
+                    LATEST_VERSION=$(az acr repository show-tags --name $(ACR_NAME) --repository $REPO_NAME --orderby time_desc --top 1 --output tsv)
+                    CHART_VERSION=$(echo $LATEST_VERSION | awk -F. -v OFS=. '{$NF += 1 ; print}')
+                  else
+                    CHART_VERSION="0.0.1"
+                  fi
+
+                  echo "📦 Packaging Helm Chart: [$CHART_VERSION]"
+
+                  if [ -d "[PIPELINE_COMPONENT_PATH]/${IMAGE_NAME}/charts" ]; then
+                    CHART_PATH="[PIPELINE_COMPONENT_PATH]/${IMAGE_NAME}/charts"
+                    sed -i "s/^name: .*/name: [PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}/" $CHART_PATH/Chart.yaml
+                    helm package --version $CHART_VERSION --destination . $CHART_PATH
+                    CHART_TGZ="[PIPELINE_COMPONENT_NAME]-${IMAGE_NAME}-${CHART_VERSION}.tgz"
+
+                    echo "🚀 Pushing Helm Chart: [$CHART_TGZ]"
+                    helm push "$CHART_TGZ" oci://$(ACR_NAME).azurecr.io/$(HELM_REPO)
+                  else
+                    echo "❌ ERROR: No valid Helm chart directory found for ${IMAGE_NAME}. Skipping Helm package."
+                  fi
+                done
