@@ -1,0 +1,11 @@
+namespace: dsi-data-pipelines
+name: dsi-load-adaptor
+aws_act_no: "647746917454"
+deployment: AZURE
+env: eso-nonprod
+kafka_server: eventhub-mesh-dpn-sbx-uksouth-001.servicebus.windows.net:9093
+source_name: EQ-LOAD.xml
+target_topic: dsi-load-raw
+producer_name: cim-load-producer
+image_name: acrmeshdpnsbxuksouth001.azurecr.io/dsi/adaptor-load
+image_semver: latest

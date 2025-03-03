@@ -1,0 +1,4 @@
+apiVersion: v2
+name: mapper-schema-assurance
+description: A Helm chart for the DSI Mapper Schema Assurance pipeline.
+version: 0.0.1

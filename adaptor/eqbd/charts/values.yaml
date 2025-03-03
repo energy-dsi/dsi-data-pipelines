@@ -1,0 +1,11 @@
+namespace: dsi-data-pipelines
+name: dsi-eqbd-adaptor
+aws_act_no: "647746917454"
+deployment: AZURE
+env: eso-nonprod
+kafka_server: eventhub-mesh-dpn-sbx-uksouth-001.servicebus.windows.net:9093
+source_name: EQBD.xml
+target_topic: dsi-eqbd-raw
+producer_name: cim-eqbd-producer
+image_name: acrmeshdpnsbxuksouth001.azurecr.io/dsi/adaptor-eqbd
+image_semver: latest

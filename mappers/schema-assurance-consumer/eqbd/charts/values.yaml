@@ -1,0 +1,10 @@
+namespace: dsi-data-pipelines
+name: dsi-eqbd-mapper-schema-assurance
+aws_act_no: "647746917454"
+deployment: AZURE
+env: eso-nonprod
+kafka_server: eventhub-mesh-dpn-sbx-uksouth-001.servicebus.windows.net:9093
+source_topic: neso-azure-knowledge-eqbd
+target_topic: dsi-eqbd-consumer-valid-schema
+image_name: acrmeshdpnsbxuksouth001.azurecr.io/dsi/mapper-consumer-schema-assurance-eqbd
+image_semver: latest
